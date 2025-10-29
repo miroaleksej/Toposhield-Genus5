@@ -196,7 +196,7 @@ However, due to the **faithfulness** of $\rho$, the mapping $\gamma \mapsto \mat
 Let $TIS = \sum_{k=0}^{2} |\beta_k - \beta_k^*|$ be the Topological Index of Security, where $\beta^* = (1, 2, 1)$. If $TIS < 0.5$, the system is secure against all known structural attacks.
 
 *Proof.*  
-From the theoretical foundation (see `Доказательства.txt`), the space of valid signatures $(U_r, U_z)$ must have the homology of a 2-torus. The Circom circuit enforces that all signatures are derived from paths in $\pi_1(\mathcal{M})$, which by construction satisfy the torus homology. Any deviation (e.g., repeated $k$, linear $k$) would produce $TIS \geq 2$, violating the circuit constraints. Since the ZKP only accepts signatures with correct holonomy structure, the output space has $\beta_0 = 1, \beta_1 = 2, \beta_2 = 1$, hence $TIS = 0 < 0.5$. ∎
+From the theoretical foundation, the space of valid signatures $(U_r, U_z)$ must have the homology of a 2-torus. The Circom circuit enforces that all signatures are derived from paths in $\pi_1(\mathcal{M})$, which by construction satisfy the torus homology. Any deviation (e.g., repeated $k$, linear $k$) would produce $TIS \geq 2$, violating the circuit constraints. Since the ZKP only accepts signatures with correct holonomy structure, the output space has $\beta_0 = 1, \beta_1 = 2, \beta_2 = 1$, hence $TIS = 0 < 0.5$. ∎
 
 ---
 
@@ -226,4 +226,4 @@ This model serves as a foundation for future research in topological cryptograph
 
 --- 
 
-**Note**: This document describes the genus = 5 prototype. The full post-quantum variant (genus ≥ 1000) requires hardware acceleration and is not covered here.
+**Note**: This document describes the genus = 5 prototype. The full post-quantum variant (genus $\geq$ 1000) requires hardware acceleration and is not covered here.
