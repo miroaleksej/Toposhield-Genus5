@@ -66,3 +66,24 @@ The design strictly adheres to the four axioms from the theoretical foundation:
 - Only genus = 5 is supported; higher genera require parameter re-tuning.
 - The faithful representation uses hardcoded matrices verified offline.
 - Performance is not optimized for production use.
+
+topological-cryptography  
+zero-knowledge-proofs  
+zkp  
+halo2  
+circom  
+post-quantum-cryptography  
+algebraic-topology  
+computational-topology  
+tropical-security  
+ecdsa-audit  
+persistent-homology  
+bettinumbers  
+hyperbolic-geometry  
+fundamental-group  
+holonomy  
+topological-data-analysis  
+zk-snark  
+bls12-381  
+poseidon-hash  
+cryptographic-security
