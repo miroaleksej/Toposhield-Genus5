@@ -50,7 +50,7 @@ $(PARAMS_DIR):
 	@mkdir -p $@
 
 $(SRS): | $(PARAMS_DIR)
-	@echo "🔐 Generating KZG trusted setup (k=17)..."
+	@echo "🔐 Generating KZG trusted setup (k=18)..."
 	$(CARGO) run --bin setup-kzg --release
 	@echo "✅ KZG parameters saved to $(SRS)"
 
