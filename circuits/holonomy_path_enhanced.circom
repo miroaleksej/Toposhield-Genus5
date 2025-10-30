@@ -2,7 +2,7 @@
 // Enhanced TopoShield ZKP with structural validation
 // Genus = 5, path length = 20, faithful SL(2, Fp) representation
 // All matrices have det = 1 and satisfy ∏[A_i, B_i] = I
-// CORRECTED: Processes path in NATURAL order to match mathematical holonomy definition
+// CORRECTED: Processes path in REVERSE order to match mathematical holonomy definition
 
 include "./poseidon.circom";
 
@@ -45,22 +45,25 @@ template GeneratorMatrix(idx) {
 }
 
 // Compute holonomy from a path of generator indices
-// CORRECTED: Processes path in NATURAL order (first to last)
+// CORRECTED: Processes path in REVERSE order (from last to first)
+// This matches mathematical definition: Hol(γ) = Hol(γₙ)·...·Hol(γ₂)·Hol(γ₁)
 template PathToHolonomy(pathLen) {
     signal input indices[pathLen];
     signal output result[4];
     component gen[pathLen];
     signal mats[pathLen][4];
     
-    // Load all matrices
+    // Load all matrices IN REVERSE ORDER
     for (var i = 0; i < pathLen; i++) {
-        gen[i] = GeneratorMatrix(indices[i]);
+        // Process path from last segment to first
+        gen[i] = GeneratorMatrix(indices[pathLen - 1 - i]);
         for (var j = 0; j < 4; j++) {
             mats[i][j] <== gen[i].M[j];
         }
     }
     
     // Compute product: result = mats[0] * mats[1] * ... * mats[pathLen-1]
+    // Which corresponds to Hol(γₙ) * ... * Hol(γ₁)
     if (pathLen == 1) {
         for (var j = 0; j < 4; j++) result[j] <== mats[0][j];
     } else {
@@ -129,7 +132,7 @@ template TopoShieldVerifyEnhanced() {
     for (var i = 0; i < 20; i++) check_delta.indices[i] <== delta[i];
 
     // 2. Verify H_pub = Hol(gamma)
-    // CORRECTED: Path processed in natural order (matches Rust implementation)
+    // CORRECTED: Path processed in REVERSE order (matches mathematical definition)
     component pubPath = PathToHolonomy(20);
     for (var i = 0; i < 20; i++) pubPath.indices[i] <== gamma[i];
     for (var i = 0; i < 4; i++) pubPath.result[i] === H_pub[i];
