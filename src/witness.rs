@@ -16,9 +16,11 @@ pub struct Witness {
     pub h_sig: [Fr; 4],
     pub desc_m: [Fr; 4],
     pub m_hash: [Fr; 4],
-    /// Private witness (generator indices 0..39 for genus=5 → 4*5=20 gens + 20 inverses = 40 total)
+    /// Private witness (generator indices 0..39 for genus=5 → 20 gens + 20 inverses)
     pub gamma: Vec<u8>,
     pub delta: Vec<u8>,
+    /// Public faithful representation (for Circom input)
+    pub gen_mats: Vec<[Fr; 4]>,
 }
 
 const PATH_LENGTH: usize = 64; // ≥64 for ≥128-bit entropy
@@ -55,6 +57,13 @@ impl Witness {
         let m_hash = Self::hash_to_4fr(message);
         let desc_m = Self::compute_desc_m(manifold.p_inv);
 
+        // 7. Export generator matrices for Circom (0..39)
+        let mut gen_mats = Vec::with_capacity(40);
+        for i in 0..40 {
+            let (a, b, c, d) = manifold.get_generator(i);
+            gen_mats.push([a, b, c, d]);
+        }
+
         Self {
             h_pub,
             h_sig,
@@ -62,6 +71,7 @@ impl Witness {
             m_hash,
             gamma,
             delta,
+            gen_mats,
         }
     }
 
@@ -152,12 +162,21 @@ impl Witness {
     pub fn to_circom_input(&self) -> BTreeMap<String, serde_json::Value> {
         let fr_to_hex = |f: &Fr| format!("0x{}", hex::encode(f.to_repr()));
         let mut input = BTreeMap::new();
+
         input.insert("H_pub".to_string(), serde_json::json!(self.h_pub.iter().map(fr_to_hex).collect::<Vec<_>>()));
         input.insert("H_sig".to_string(), serde_json::json!(self.h_sig.iter().map(fr_to_hex).collect::<Vec<_>>()));
         input.insert("desc_M".to_string(), serde_json::json!(self.desc_m.iter().map(fr_to_hex).collect::<Vec<_>>()));
         input.insert("m_hash".to_string(), serde_json::json!(self.m_hash.iter().map(fr_to_hex).collect::<Vec<_>>()));
         input.insert("gamma".to_string(), serde_json::json!(self.gamma));
         input.insert("delta".to_string(), serde_json::json!(self.delta));
+
+        // Export generator matrices as public input for Circom
+        let gen_mats_hex: Vec<Vec<String>> = self.gen_mats
+            .iter()
+            .map(|mat| mat.iter().map(fr_to_hex).collect())
+            .collect();
+        input.insert("gen_mats".to_string(), serde_json::json!(gen_mats_hex));
+
         input
     }
 }
@@ -208,5 +227,6 @@ mod tests {
         assert!(input.contains_key("H_sig"));
         assert!(input.contains_key("desc_M"));
         assert!(input.contains_key("m_hash"));
+        assert!(input.contains_key("gen_mats"));
     }
 }
