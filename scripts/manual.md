@@ -4,7 +4,7 @@ This repository includes a Python script that **animates the private key path** 
 
 ---
 
-## 🎯 Purpose
+## Purpose
 
 - **Educational**: Show how a cryptographic secret lives as a geodesic path in hyperbolic space.
 - **Demonstration**: Include in talks, papers, or READMEs to illustrate the geometric nature of TopoShield.
@@ -12,7 +12,7 @@ This repository includes a Python script that **animates the private key path** 
 
 ---
 
-## 📦 Requirements
+## Requirements
 
 - Python 3.8+
 - `matplotlib`
@@ -31,7 +31,7 @@ brew install ffmpeg
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 1. **Generate a witness** (e.g., by running the TopoShield example):
 
@@ -52,7 +52,7 @@ brew install ffmpeg
 
 ---
 
-## 📁 File Structure
+## File Structure
 
 ```
 toposhield/
@@ -76,7 +76,7 @@ If no file is provided, the script uses a built-in test path.
 
 ---
 
-## 🔧 How It Works
+## How It Works
 
 1. **Generators**: The script embeds the same 20 SL(2, ℝ) matrices used in `manifold.rs` (10 generators + 10 inverses).
 2. **Action on ℍ**: Starting from the point `i` in the upper half-plane ℍ, it applies each Möbius transformation corresponding to the generator index.
@@ -89,7 +89,7 @@ If no file is provided, the script uses a built-in test path.
 
 ---
 
-## 🖼️ Output Examples
+## Output Examples
 
 ### Static Image (`path_on_poincare_disk.png`)
 ![Static path on Poincaré disk](path_on_poincare_disk.png)
@@ -103,7 +103,7 @@ A 10‑second video showing the path being traced step by step. Ideal for presen
 
 ---
 
-## 🛠 Customization
+## Customization
 
 You can modify the script to:
 - Change the starting point (default: `i` in ℍ).
@@ -115,7 +115,7 @@ You can modify the script to:
 
 ---
 
-## 📚 Theory Behind the Visualization
+## Theory Behind the Visualization
 
 In TopoShield:
 - The **private key** is a word `γ = g₁g₂…g₂₀` in π₁(ℳ), where each `gᵢ ∈ {a₁,…,b₅, a₁⁻¹,…,b₅⁻¹}`.
@@ -127,7 +127,7 @@ This visualization **makes that orbit visible**.
 
 ---
 
-## 📝 License
+## License
 
 MIT License. See `LICENSE` for details.
 
