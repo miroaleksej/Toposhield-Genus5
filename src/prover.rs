@@ -1,7 +1,6 @@
 // src/prover.rs
 // Full prover and verifier for TopoShield ZKP (genus = 5)
 // No stubs, no placeholders — exact integration with Circom + Halo2
-
 use crate::{manifold::HyperbolicManifold, witness::Witness};
 use ff::PrimeField;
 use halo2_circom::{
@@ -26,6 +25,7 @@ use halo2_proofs::{
     },
 };
 use std::{fs, io::Cursor};
+use rand::rngs::OsRng;
 
 /// TopoShield prover with full KZG setup and proof lifecycle
 pub struct TopoShieldProver {
@@ -44,29 +44,22 @@ impl TopoShieldProver {
             "./build/holonomy_path.wasm",
         )?;
 
-        let circuit = CircomCircuit {
-            r1cs: config.r1cs.clone(),
-            witness: None,
-            wire_mapping: None,
-            aux_offset: config.aux_offset,
-        };
-
         // Load or generate KZG parameters (k=17 supports ~131k constraints)
         let params_path = "params/kzg.srs";
         let params = if std::path::Path::new(params_path).exists() {
             let bytes = fs::read(params_path)?;
             ParamsKZG::read::<Cursor<&[u8]>>(&mut Cursor::new(&bytes))?
         } else {
-            let params = ParamsKZG::setup(17, Cursor::new(Vec::new()));
+            let mut params = ParamsKZG::setup(17, OsRng);
             fs::create_dir_all("params")?;
             let mut file = fs::File::create(params_path)?;
             params.write(&mut file)?;
             params
         };
 
-        // Generate empty circuit for keygen
+        // Build empty circuit for keygen
         let empty_circuit = CircomCircuit {
-            r1cs: config.r1cs,
+            r1cs: config.r1cs.clone(),
             witness: Some(vec![]),
             wire_mapping: None,
             aux_offset: config.aux_offset,
@@ -76,8 +69,16 @@ impl TopoShieldProver {
         let vk = keygen_vk(&params, &empty_circuit)?;
         let pk = keygen_pk(&params, vk.clone(), &empty_circuit)?;
 
+        // Store base circuit without witness
+        let base_circuit = CircomCircuit {
+            r1cs: config.r1cs,
+            witness: None,
+            wire_mapping: None,
+            aux_offset: config.aux_offset,
+        };
+
         Ok(Self {
-            circuit,
+            circuit: base_circuit,
             pk,
             vk,
             params,
@@ -133,8 +134,8 @@ impl TopoShieldProver {
             &self.params,
             &self.pk,
             &[circuit_with_witness],
-            &[&[pub_inputs.as_slice()]],
-            &mut rand::thread_rng(),
+            &[&[&pub_inputs]],
+            OsRng,
             &mut transcript,
         )?;
 
@@ -169,7 +170,7 @@ impl TopoShieldProver {
             &self.params,
             &self.vk,
             strategy,
-            &[pub_inputs.as_slice()],
+            &[&[&pub_inputs]],
             &mut transcript,
         )
     }
@@ -184,16 +185,13 @@ mod tests {
     fn test_prover_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
         // 1. Create prover
         let prover = TopoShieldProver::new()?;
-
         // 2. Generate witness
         let message = b"Topological Cryptography Test";
         let private_seed = b"my_secret_seed_2025";
         let witness = Witness::new(message, private_seed);
-
         // 3. Generate proof
         let proof = prover.prove(witness.clone())?;
         assert!(!proof.is_empty());
-
         // 4. Verify proof
         let is_valid = prover.verify(
             &proof,
@@ -203,7 +201,6 @@ mod tests {
             witness.m_hash,
         )?;
         assert!(is_valid);
-
         Ok(())
     }
 
