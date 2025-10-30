@@ -75,7 +75,7 @@ Security Notes
 
 This implementation is research-grade and intended for experimental and academic use. Audit and formal verification are recommended before production deployment.
 ___
-```
+```lean
 -- TopoShield: Post-Quantum Signature from Hyperbolic Holonomy
 -- Formal security reduction in Lean 4 (Mathlib-compatible)
 
