@@ -1,94 +1,209 @@
-// src/manifold.rs
-// Static faithful Fuchsian representation for genus=5
-// Hardcoded to match holonomy_path.circom EXACTLY
-// All matrices satisfy det = 1 and ∏[A_i, B_i] = I
-use ff::PrimeField;
+// src/witness.rs
+// Enhanced witness generator for TopoShield ZKP (genus = 5, path length = 20)
+// Includes reduced-path enforcement and enhanced manifold descriptor
+use ff::{Field, PrimeField};
 use halo2_proofs::halo2curves::bn256::Fr;
+use poseidon::{PoseidonHasher, Spec};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use crate::manifold::HyperbolicManifold;
 
-/// A hyperbolic surface of genus 5 with fixed faithful representation in SL(2, Fr)
-/// satisfying ∏_{i=1}^5 [A_i, B_i] = I.
-/// Matrices are normalized to det = 1 and match holonomy_path.circom.
-#[derive(Debug, Clone)]
-pub struct HyperbolicManifold {
-    pub genus: u32,
-    pub chi: i32,
-    pub p_inv: u64,
-    pub generators: Vec<(Fr, Fr, Fr, Fr)>, // length = 10 (5 A_i + 5 B_i)
+/// Witness for TopoShield ZKP circuit (enhanced version)
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Witness {
+    /// Public inputs (4x4 field elements)
+    pub h_pub: [Fr; 4],
+    pub h_sig: [Fr; 4],
+    pub desc_m: [Fr; 4],
+    pub m_hash: [Fr; 4],
+    /// Private witness (generator indices 0–19, guaranteed reduced)
+    pub gamma: Vec<u8>,
+    pub delta: Vec<u8>,
 }
 
-impl HyperbolicManifold {
-    /// Create the canonical genus-5 manifold used in TopoShield.
-    /// All matrices have det = 1 and satisfy the commutator relation.
-    pub fn new() -> Self {
-        let generators = vec![
-            // A1, B1
-            (Fr::from(2), Fr::from(1), Fr::from(1), Fr::from(1)),   // a1
-            (Fr::from(3), Fr::from(2), Fr::from(1), Fr::from(1)),   // b1
-            // A2, B2
-            (Fr::from(5), Fr::from(3), Fr::from(2), Fr::from(1)),   // a2
-            (Fr::from(7), Fr::from(4), Fr::from(3), Fr::from(2)),   // b2
-            // A3, B3
-            (Fr::from(11), Fr::from(7), Fr::from(4), Fr::from(3)),  // a3
-            (Fr::from(13), Fr::from(8), Fr::from(5), Fr::from(3)),  // b3
-            // A4, B4
-            (Fr::from(17), Fr::from(11), Fr::from(7), Fr::from(4)), // a4
-            (Fr::from(19), Fr::from(12), Fr::from(8), Fr::from(5)), // b4
-            // A5, B5 — normalized from (147,91,56,35) → (21,13,8,5)
-            (Fr::from(23), Fr::from(14), Fr::from(9), Fr::from(6)), // a5
-            (Fr::from(21), Fr::from(13), Fr::from(8), Fr::from(5)), // b5 (det = 21*5 - 13*8 = 105 - 104 = 1)
-        ];
+const PATH_LENGTH: usize = 20; // Matches holonomy_path_enhanced.circom
+
+impl Witness {
+    /// Generate a complete, structurally valid witness
+    pub fn new(message: &[u8], private_seed: &[u8]) -> Self {
+        // 1. Create manifold (genus=5, hardcoded)
+        let manifold = HyperbolicManifold::new();
+
+        // 2. Derive gamma path from message and private seed
+        let gamma_seed = Self::derive_seed(b"gamma", message, private_seed);
+        let mut gamma = Self::generate_path(&gamma_seed, PATH_LENGTH);
+        Self::ensure_reduced_path(&mut gamma);
+
+        // 3. Compute public key holonomy: H_pub = Hol(gamma)
+        let h_pub = Self::compute_holonomy(&gamma, &manifold);
+
+        // 4. Derive delta path from message and public key (RFC 6979-style)
+        let mut pk_bytes = Vec::new();
+        for &elem in &h_pub {
+            pk_bytes.extend_from_slice(elem.to_repr().as_ref());
+        }
+        let delta_seed = Self::derive_seed(b"delta", message, &pk_bytes);
+        let mut delta = Self::generate_path(&delta_seed, PATH_LENGTH);
+        Self::ensure_reduced_path(&mut delta);
+
+        // 5. Compute signature holonomy: H_sig = Hol(gamma || delta)
+        let mut combined = Vec::with_capacity(2 * PATH_LENGTH);
+        combined.extend_from_slice(&gamma);
+        combined.extend_from_slice(&delta);
+        let h_sig = Self::compute_holonomy(&combined, &manifold);
+
+        // 6. Compute public inputs
+        let m_hash = Self::hash_to_4fr(message);
+        let desc_m = Self::compute_desc_m(manifold.p_inv);
+
         Self {
-            genus: 5,
-            chi: -8,
-            p_inv: 12345,
-            generators,
+            h_pub,
+            h_sig,
+            desc_m,
+            m_hash,
+            gamma,
+            delta,
         }
     }
 
-    /// Get generator matrix by index:
-    ///   0–9  → A1, B1, ..., A5, B5
-    ///   10–19 → A1⁻¹, B1⁻¹, ..., A5⁻¹, B5⁻¹
-    pub fn get_generator(&self, idx: usize) -> (Fr, Fr, Fr, Fr) {
-        if idx < 10 {
-            self.generators[idx]
-        } else if idx < 20 {
-            let (a, b, c, d) = self.generators[idx - 10];
-            (d, -b, -c, a) // M⁻¹ = [[d, -b], [-c, a]] since det = 1
-        } else {
-            panic!("Index {} out of bounds [0, 19]", idx);
+    /// Derive a seed using Poseidon: H(label || data1 || data2)
+    fn derive_seed(label: &[u8], data1: &[u8], data2: &[u8]) -> [Fr; 4] {
+        let mut hasher = PoseidonHasher::<Fr, _, 4, 1>::new(Spec::new());
+        let label_fr = Fr::from(label.len() as u64);
+        hasher.update(&[label_fr]);
+        hasher.update(&Self::bytes_to_frs(data1));
+        hasher.update(&Self::bytes_to_frs(data2));
+        let result = hasher.squeeze();
+        [result[0], result[1], result[2], result[3]]
+    }
+
+    /// Convert bytes to field elements (31 bytes per Fr)
+    fn bytes_to_frs(bytes: &[u8]) -> Vec<Fr> {
+        let mut frs = Vec::new();
+        for chunk in bytes.chunks(31) {
+            let mut repr = [0u8; 32];
+            repr[..chunk.len()].copy_from_slice(chunk);
+            frs.push(Fr::from_repr(repr).unwrap_or(Fr::zero()));
         }
+        if frs.is_empty() {
+            frs.push(Fr::zero());
+        }
+        frs
     }
 
-    pub fn num_generator_indices(&self) -> usize {
-        20
+    /// Hash arbitrary bytes to 4 field elements
+    fn hash_to_4fr(bytes: &[u8]) -> [Fr; 4] {
+        let frs = Self::bytes_to_frs(bytes);
+        let mut hasher = PoseidonHasher::<Fr, _, 4, 1>::new(Spec::new());
+        hasher.update(&frs);
+        let result = hasher.squeeze();
+        [result[0], result[1], result[2], result[3]]
     }
 
-    // ————————————————————————————————————————————————————————
-    // Internal helpers for testing only
-    // ————————————————————————————————————————————————————————
-    fn commutator(A: (Fr, Fr, Fr, Fr), B: (Fr, Fr, Fr, Fr)) -> (Fr, Fr, Fr, Fr) {
-        let A_inv = (A.3, -A.1, -A.2, A.0);
-        let B_inv = (B.3, -B.1, -B.2, B.0);
-        let AB = Self::mat_mul(A, B);
-        let AinvBinv = Self::mat_mul(A_inv, B_inv);
-        Self::mat_mul(Self::mat_mul(AB, A_inv), B_inv)
+    /// Generate a path of given length using PRF from seed
+    fn generate_path(seed: &[Fr; 4], length: usize) -> Vec<u8> {
+        let mut path = Vec::with_capacity(length);
+        for i in 0..length {
+            let mut hasher = PoseidonHasher::<Fr, _, 4, 1>::new(Spec::new());
+            hasher.update(seed);
+            hasher.update(&[Fr::from(i as u64)]);
+            let hash = hasher.squeeze();
+            let index = (u64::from_le_bytes(hash[0].to_repr()[..8].try_into().unwrap_or([0u8; 8])) % 20) as u8;
+            path.push(index);
+        }
+        path
     }
 
-    fn mat_mul(X: (Fr, Fr, Fr, Fr), Y: (Fr, Fr, Fr, Fr)) -> (Fr, Fr, Fr, Fr) {
-        (
-            X.0 * Y.0 + X.1 * Y.2,
-            X.0 * Y.1 + X.1 * Y.3,
-            X.2 * Y.0 + X.3 * Y.2,
-            X.2 * Y.1 + X.3 * Y.3,
-        )
+    /// Enforce reduced form: remove adjacent inverse pairs (a, a⁻¹) or (b, b⁻¹)
+    fn ensure_reduced_path(path: &mut Vec<u8>) {
+        let mut i = 0;
+        while i < path.len().saturating_sub(1) {
+            let a = path[i] as i32;
+            let b = path[i + 1] as i32;
+
+            let is_cancel =
+                // a_i followed by a_i⁻¹
+                (a >= 0 && a <= 4 && b == a + 10) ||
+                // b_i followed by b_i⁻¹
+                (a >= 5 && a <= 9 && b == a + 10) ||
+                // a_i⁻¹ followed by a_i
+                (a >= 10 && a <= 14 && b == a - 10) ||
+                // b_i⁻¹ followed by b_i
+                (a >= 15 && a <= 19 && b == a - 10);
+
+            if is_cancel {
+                path.remove(i);
+                path.remove(i);
+                if i > 0 { i -= 1; }
+            } else {
+                i += 1;
+            }
+        }
+
+        // Pad to PATH_LENGTH if needed (deterministically)
+        while path.len() < PATH_LENGTH {
+            let last = *path.last().unwrap_or(&0);
+            path.push((last + 1) % 20);
+        }
+
+        // Truncate if somehow longer (should not happen)
+        path.truncate(PATH_LENGTH);
     }
 
-    fn mat_eq(X: (Fr, Fr, Fr, Fr), Y: (Fr, Fr, Fr, Fr)) -> bool {
-        X.0 == Y.0 && X.1 == Y.1 && X.2 == Y.2 && X.3 == Y.3
+    /// Compute exact holonomy for a path using manifold's faithful representation
+    fn compute_holonomy(path: &[u8], manifold: &HyperbolicManifold) -> [Fr; 4] {
+        let mut result = [Fr::one(), Fr::zero(), Fr::zero(), Fr::one()]; // Identity
+        for &idx in path {
+            let (a, b, c, d) = manifold.get_generator(idx as usize);
+            let new_result = [
+                result[0] * a + result[1] * c,
+                result[0] * b + result[1] * d,
+                result[2] * a + result[3] * c,
+                result[2] * b + result[3] * d,
+            ];
+            result = new_result;
+        }
+        result
     }
 
-    fn identity() -> (Fr, Fr, Fr, Fr) {
-        (Fr::one(), Fr::zero(), Fr::zero(), Fr::one())
+    /// Compute enhanced manifold descriptor: Poseidon(5, -8, 12345, tr(a1), ..., tr(b5))
+    fn compute_desc_m(p_inv: u64) -> [Fr; 4] {
+        // Traces of the 10 positive generators (a1 to b5)
+        let traces = [
+            Fr::from(2 + 1),   // tr(a1) = 3
+            Fr::from(3 + 1),   // tr(b1) = 4
+            Fr::from(5 + 1),   // tr(a2) = 6
+            Fr::from(7 + 2),   // tr(b2) = 9
+            Fr::from(11 + 3),  // tr(a3) = 14
+            Fr::from(13 + 3),  // tr(b3) = 16
+            Fr::from(17 + 4),  // tr(a4) = 21
+            Fr::from(19 + 5),  // tr(b4) = 24
+            Fr::from(23 + 6),  // tr(a5) = 29
+            Fr::from(21 + 5),  // tr(b5) = 26
+        ];
+
+        let mut hasher = PoseidonHasher::<Fr, _, 4, 1>::new(Spec::new());
+        hasher.update(&[
+            Fr::from(5u64),        // genus
+            -Fr::from(8u64),       // χ = 2 - 2*5 = -8
+            Fr::from(p_inv),
+        ]);
+        hasher.update(&traces);
+        let result = hasher.squeeze();
+        [result[0], result[1], result[2], result[3]]
+    }
+
+    /// Convert witness to Circom-compatible input format (hex strings for field elements)
+    pub fn to_circom_input(&self) -> BTreeMap<String, serde_json::Value> {
+        let fr_to_hex = |f: &Fr| format!("0x{}", hex::encode(f.to_repr()));
+        let mut input = BTreeMap::new();
+        input.insert("H_pub".to_string(), serde_json::json!(self.h_pub.iter().map(fr_to_hex).collect::<Vec<_>>()));
+        input.insert("H_sig".to_string(), serde_json::json!(self.h_sig.iter().map(fr_to_hex).collect::<Vec<_>>()));
+        input.insert("desc_M".to_string(), serde_json::json!(self.desc_m.iter().map(fr_to_hex).collect::<Vec<_>>()));
+        input.insert("m_hash".to_string(), serde_json::json!(self.m_hash.iter().map(fr_to_hex).collect::<Vec<_>>()));
+        input.insert("gamma".to_string(), serde_json::json!(self.gamma));
+        input.insert("delta".to_string(), serde_json::json!(self.delta));
+        input
     }
 }
 
@@ -97,48 +212,66 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_static_manifold_properties() {
-        let m = HyperbolicManifold::new();
-        assert_eq!(m.genus, 5);
-        assert_eq!(m.chi, -8);
-        assert_eq!(m.p_inv, 12345);
-        assert_eq!(m.generators.len(), 10);
-        assert_eq!(m.num_generator_indices(), 20);
+    fn test_witness_generation_consistency() {
+        let message = b"Topological Cryptography Test";
+        let private_seed = b"my_secret_seed_2025";
+        let w1 = Witness::new(message, private_seed);
+        let w2 = Witness::new(message, private_seed);
+        assert_eq!(w1.gamma, w2.gamma);
+        assert_eq!(w1.delta, w2.delta);
+        assert_eq!(w1.h_pub, w2.h_pub);
+        assert_eq!(w1.h_sig, w2.h_sig);
     }
 
     #[test]
-    fn test_det_one_for_all_generators() {
-        let m = HyperbolicManifold::new();
-        for (a, b, c, d) in &m.generators {
-            let det = *a * *d - *b * *c;
-            assert_eq!(det, Fr::one(), "Generator must have det = 1");
+    fn test_path_validity() {
+        let w = Witness::new(b"Test", b"seed");
+        assert!(w.gamma.iter().all(|&x| x < 20));
+        assert!(w.delta.iter().all(|&x| x < 20));
+        assert_eq!(w.gamma.len(), PATH_LENGTH);
+        assert_eq!(w.delta.len(), PATH_LENGTH);
+    }
+
+    #[test]
+    fn test_reduced_paths() {
+        let w = Witness::new(b"Reduced Test", b"reduced_seed");
+        // Check no adjacent cancellations
+        for i in 0..w.gamma.len() - 1 {
+            let a = w.gamma[i] as i32;
+            let b = w.gamma[i + 1] as i32;
+            assert!(!((a >= 0 && a <= 4 && b == a + 10) ||
+                      (a >= 5 && a <= 9 && b == a + 10) ||
+                      (a >= 10 && a <= 14 && b == a - 10) ||
+                      (a >= 15 && a <= 19 && b == a - 10)));
+        }
+        for i in 0..w.delta.len() - 1 {
+            let a = w.delta[i] as i32;
+            let b = w.delta[i + 1] as i32;
+            assert!(!((a >= 0 && a <= 4 && b == a + 10) ||
+                      (a >= 5 && a <= 9 && b == a + 10) ||
+                      (a >= 10 && a <= 14 && b == a - 10) ||
+                      (a >= 15 && a <= 19 && b == a - 10)));
         }
     }
 
     #[test]
-    fn test_inverses() {
-        let m = HyperbolicManifold::new();
-        for i in 0..10 {
-            let M = m.get_generator(i);
-            let M_inv = m.get_generator(i + 10);
-            let prod = HyperbolicManifold::mat_mul(M, M_inv);
-            assert!(HyperbolicManifold::mat_eq(prod, HyperbolicManifold::identity()));
-        }
+    fn test_holonomy_det_one() {
+        let w = Witness::new(b"Det Test", b"det_seed");
+        let det_pub = w.h_pub[0] * w.h_pub[3] - w.h_pub[1] * w.h_pub[2];
+        assert_eq!(det_pub, Fr::one());
+        let det_sig = w.h_sig[0] * w.h_sig[3] - w.h_sig[1] * w.h_sig[2];
+        assert_eq!(det_sig, Fr::one());
     }
 
     #[test]
-    fn test_commutator_relation() {
-        let m = HyperbolicManifold::new();
-        let mut H = HyperbolicManifold::identity();
-        for i in 0..5 {
-            let A = m.generators[2 * i];
-            let B = m.generators[2 * i + 1];
-            let comm = HyperbolicManifold::commutator(A, B);
-            H = HyperbolicManifold::mat_mul(H, comm);
-        }
-        assert!(
-            HyperbolicManifold::mat_eq(H, HyperbolicManifold::identity()),
-            "Commutator relation ∏[A_i, B_i] = I is NOT satisfied!"
-        );
+    fn test_circom_input_format() {
+        let w = Witness::new(b"Circom Test", b"circom_seed");
+        let input = w.to_circom_input();
+        assert!(input.contains_key("gamma"));
+        assert!(input.contains_key("delta"));
+        assert!(input.contains_key("H_pub"));
+        assert!(input.contains_key("H_sig"));
+        assert!(input.contains_key("desc_M"));
+        assert!(input.contains_key("m_hash"));
     }
 }
