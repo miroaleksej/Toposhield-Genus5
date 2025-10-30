@@ -1,9 +1,9 @@
 // src/witness.rs
-// Full witness generator for TopoShield ZKP (genus = 5, path length = 64)
-// No stubs, no placeholders — exact holonomy computation with dynamic manifold
+// Full witness generator for TopoShield ZKP (genus = 5, path length = 20)
+// No stubs, no placeholders — exact holonomy computation with hardcoded faithful representation
 use ff::{Field, PrimeField};
 use halo2_proofs::halo2curves::bn256::Fr;
-use poseidon::{PoseidonHasher, Spec, SparseMDSMatrix};
+use poseidon::{PoseidonHasher, Spec};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use crate::manifold::HyperbolicManifold;
@@ -16,25 +16,22 @@ pub struct Witness {
     pub h_sig: [Fr; 4],
     pub desc_m: [Fr; 4],
     pub m_hash: [Fr; 4],
-    /// Private witness (generator indices 0..39 for genus=5 → 20 gens + 20 inverses)
+    /// Private witness (generator indices 0–19)
     pub gamma: Vec<u8>,
     pub delta: Vec<u8>,
-    /// Public faithful representation (for Circom input)
-    pub gen_mats: Vec<[Fr; 4]>,
 }
 
-const PATH_LENGTH: usize = 64; // ≥64 for ≥128-bit entropy
-const GENUS: u32 = 5;
+const PATH_LENGTH: usize = 20; // Matches holonomy_path.circom
 
 impl Witness {
     /// Generate a complete witness for a given message and private seed
     pub fn new(message: &[u8], private_seed: &[u8]) -> Self {
-        // 1. Create manifold deterministically from private seed
-        let manifold = HyperbolicManifold::from_seed(GENUS, private_seed);
+        // 1. Create manifold (genus=5, hardcoded)
+        let manifold = HyperbolicManifold::new();
 
         // 2. Derive gamma path from message and private seed
         let gamma_seed = Self::derive_seed(b"gamma", message, private_seed);
-        let gamma = Self::generate_path(&gamma_seed, PATH_LENGTH, manifold.num_generator_indices());
+        let gamma = Self::generate_path(&gamma_seed, PATH_LENGTH);
 
         // 3. Compute public key holonomy: H_pub = Hol(gamma)
         let h_pub = Self::compute_holonomy(&gamma, &manifold);
@@ -45,7 +42,7 @@ impl Witness {
             pk_bytes.extend_from_slice(elem.to_repr().as_ref());
         }
         let delta_seed = Self::derive_seed(b"delta", message, &pk_bytes);
-        let delta = Self::generate_path(&delta_seed, PATH_LENGTH, manifold.num_generator_indices());
+        let delta = Self::generate_path(&delta_seed, PATH_LENGTH);
 
         // 5. Compute signature holonomy: H_sig = Hol(gamma || delta)
         let mut combined = Vec::with_capacity(2 * PATH_LENGTH);
@@ -57,13 +54,6 @@ impl Witness {
         let m_hash = Self::hash_to_4fr(message);
         let desc_m = Self::compute_desc_m(manifold.p_inv);
 
-        // 7. Export generator matrices for Circom (0..39)
-        let mut gen_mats = Vec::with_capacity(40);
-        for i in 0..40 {
-            let (a, b, c, d) = manifold.get_generator(i);
-            gen_mats.push([a, b, c, d]);
-        }
-
         Self {
             h_pub,
             h_sig,
@@ -71,13 +61,12 @@ impl Witness {
             m_hash,
             gamma,
             delta,
-            gen_mats,
         }
     }
 
-    /// Derive a seed using Poseidon with 128-bit security parameters
+    /// Derive a seed using Poseidon: H(label || data1 || data2)
     fn derive_seed(label: &[u8], data1: &[u8], data2: &[u8]) -> [Fr; 4] {
-        let mut hasher = PoseidonHasher::<Fr, _, 4, 1>::new(Self::poseidon_spec());
+        let mut hasher = PoseidonHasher::<Fr, _, 4, 1>::new(Spec::new());
         let label_fr = Fr::from(label.len() as u64);
         hasher.update(&[label_fr]);
         hasher.update(&Self::bytes_to_frs(data1));
@@ -103,22 +92,23 @@ impl Witness {
     /// Hash arbitrary bytes to 4 field elements
     fn hash_to_4fr(bytes: &[u8]) -> [Fr; 4] {
         let frs = Self::bytes_to_frs(bytes);
-        let mut hasher = PoseidonHasher::<Fr, _, 4, 1>::new(Self::poseidon_spec());
+        let mut hasher = PoseidonHasher::<Fr, _, 4, 1>::new(Spec::new());
         hasher.update(&frs);
         let result = hasher.squeeze();
         [result[0], result[1], result[2], result[3]]
     }
 
     /// Generate a path of given length using PRF from seed
-    fn generate_path(seed: &[Fr; 4], length: usize, num_indices: usize) -> Vec<u8> {
+    fn generate_path(seed: &[Fr; 4], length: usize) -> Vec<u8> {
         let mut path = Vec::with_capacity(length);
         for i in 0..length {
-            let mut hasher = PoseidonHasher::<Fr, _, 4, 1>::new(Self::poseidon_spec());
+            let mut hasher = PoseidonHasher::<Fr, _, 4, 1>::new(Spec::new());
             hasher.update(seed);
             hasher.update(&[Fr::from(i as u64)]);
             let hash = hasher.squeeze();
+            // Map to 0–19 (20 generator indices)
             let index = (u64::from_le_bytes(hash[0].to_repr()[..8].try_into().unwrap_or([0u8; 8]))
-                % num_indices as u64) as u8;
+                % 20) as u8;
             path.push(index);
         }
         path
@@ -140,22 +130,17 @@ impl Witness {
         result
     }
 
-    /// Compute manifold descriptor: Poseidon(genus, chi, p_inv)
+    /// Compute manifold descriptor: Poseidon(5, -8, p_inv)
     fn compute_desc_m(p_inv: u64) -> [Fr; 4] {
-        let mut hasher = PoseidonHasher::<Fr, _, 4, 1>::new(Self::poseidon_spec());
+        let mut hasher = PoseidonHasher::<Fr, _, 4, 1>::new(Spec::new());
         hasher.update(&[
-            Fr::from(GENUS as u64),
-            Fr::from((2 - 2 * GENUS as i32) as u64), // chi = -8
+            Fr::from(5u64),        // genus
+            -Fr::from(8u64),       // chi = 2 - 2*5 = -8
             Fr::from(p_inv),
             Fr::zero(),
         ]);
         let result = hasher.squeeze();
         [result[0], result[1], result[2], result[3]]
-    }
-
-    /// 128-bit secure Poseidon spec for BN254
-    fn poseidon_spec() -> Spec<Fr, 4, 1> {
-        Spec::new_with_params(8, 57, SparseMDSMatrix::new())
     }
 
     /// Convert witness to Circom-compatible input format
@@ -169,13 +154,6 @@ impl Witness {
         input.insert("m_hash".to_string(), serde_json::json!(self.m_hash.iter().map(fr_to_hex).collect::<Vec<_>>()));
         input.insert("gamma".to_string(), serde_json::json!(self.gamma));
         input.insert("delta".to_string(), serde_json::json!(self.delta));
-
-        // Export generator matrices as public input for Circom
-        let gen_mats_hex: Vec<Vec<String>> = self.gen_mats
-            .iter()
-            .map(|mat| mat.iter().map(fr_to_hex).collect())
-            .collect();
-        input.insert("gen_mats".to_string(), serde_json::json!(gen_mats_hex));
 
         input
     }
@@ -200,10 +178,8 @@ mod tests {
     #[test]
     fn test_path_validity() {
         let w = Witness::new(b"Test", b"seed");
-        let manifold = HyperbolicManifold::from_seed(GENUS, b"seed");
-        let max_idx = manifold.num_generator_indices() as u8;
-        assert!(w.gamma.iter().all(|&x| x < max_idx));
-        assert!(w.delta.iter().all(|&x| x < max_idx));
+        assert!(w.gamma.iter().all(|&x| x < 20));
+        assert!(w.delta.iter().all(|&x| x < 20));
         assert_eq!(w.gamma.len(), PATH_LENGTH);
         assert_eq!(w.delta.len(), PATH_LENGTH);
     }
@@ -227,6 +203,5 @@ mod tests {
         assert!(input.contains_key("H_sig"));
         assert!(input.contains_key("desc_M"));
         assert!(input.contains_key("m_hash"));
-        assert!(input.contains_key("gen_mats"));
     }
 }
