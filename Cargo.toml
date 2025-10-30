@@ -5,8 +5,8 @@ edition = "2021"
 authors = ["Mironov Aleksej <miro-aleksej@yandex.ru>"]
 description = "TopoShield: Post-quantum signature scheme based on hyperbolic topology and zero-knowledge proofs"
 license = "MIT"
-repository = "https://github.com/your-username/toposhield"  # замените при публикации
-keywords = ["zkp", "post-quantum", "topology", "halo2", "circom"]
+repository = "https://github.com/your-username/toposhield"
+keywords = ["zkp", "post-quantum", "topology", "halo2", "circom", "geometric-cryptography"]
 categories = ["cryptography", "mathematics"]
 
 [lib]
@@ -17,14 +17,13 @@ name = "integration_test"
 path = "tests/integration_test.rs"
 
 [dependencies]
-# Core cryptographic primitives
+# Algebraic foundations
 ff = "0.13"
 group = "0.13"
-rand = "0.8"
 
-# Halo2 and curves
+# Halo2 stack (v0.5 compatible)
 halo2-curves = { version = "0.5", features = ["bn256"] }
-halo2-proofs = { version = "0.5", features = ["dev-graph", "loader_evm"] }
+halo2-proofs = { version = "0.5", features = ["dev-graph"] }
 
 # Circom integration
 halo2-circom = "0.5"
@@ -32,19 +31,24 @@ halo2-circom = "0.5"
 # Hashing
 poseidon = { version = "0.5", features = ["halo2"] }
 
-# Serialization (for witness export)
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Hex encoding (for Circom input formatting)
-hex = "0.4"
+# Utilities
+rand = "0.8"
 
 [dev-dependencies]
+# For integration tests
 criterion = "0.5"
 
 [[bench]]
 name = "signing_bench"
 harness = false
+
+[profile.dev]
+opt-level = 1
+overflow-checks = false
 
 [profile.release]
 opt-level = 3
