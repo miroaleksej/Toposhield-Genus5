@@ -1,4 +1,4 @@
-**TopoShield ZKP — Genus 5 Prototype**  
+# **TopoShield ZKP — Genus 5 Prototype**  
 *Post-quantum signature scheme based on hyperbolic topology and zero-knowledge proofs*
 
 ---
