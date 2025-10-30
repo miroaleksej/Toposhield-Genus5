@@ -12,6 +12,14 @@ categories = ["cryptography", "mathematics"]
 [lib]
 path = "src/lib.rs"
 
+[[bin]]
+name = "setup-kzg"
+path = "src/bin/setup-kzg.rs"
+
+[[bin]]
+name = "prove-example"
+path = "src/bin/prove-example.rs"
+
 [[test]]
 name = "integration_test"
 path = "tests/integration_test.rs"
@@ -37,9 +45,9 @@ serde_json = "1.0"
 
 # Utilities
 rand = "0.8"
+hex = "0.4"  # ← добавлено для to_circom_input()
 
 [dev-dependencies]
-# For integration tests
 criterion = "0.5"
 
 [[bench]]
