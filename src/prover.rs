@@ -1,5 +1,5 @@
 // src/prover.rs
-// Full prover and verifier for TopoShield ZKP (genus = 5)
+// Full prover and verifier for TopoShield ZKP (genus = 5, path length = 64)
 // No stubs, no placeholders — exact integration with Circom + Halo2
 use crate::{manifold::HyperbolicManifold, witness::Witness};
 use ff::PrimeField;
@@ -36,7 +36,7 @@ pub struct TopoShieldProver {
 }
 
 impl TopoShieldProver {
-    /// Initialize prover with Circom artifacts and KZG parameters
+    /// Initialize prover with Circom artifacts and KZG parameters (k=18)
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         // Load Circom artifacts
         let config = CircomConfig::<Bn256>::new(
@@ -44,13 +44,20 @@ impl TopoShieldProver {
             "./build/holonomy_path.wasm",
         )?;
 
-        // Load or generate KZG parameters (k=17 supports ~131k constraints)
+        let circuit = CircomCircuit {
+            r1cs: config.r1cs.clone(),
+            witness: None,
+            wire_mapping: None,
+            aux_offset: config.aux_offset,
+        };
+
+        // Load or generate KZG parameters (k=18 supports ~260k constraints)
         let params_path = "params/kzg.srs";
         let params = if std::path::Path::new(params_path).exists() {
             let bytes = fs::read(params_path)?;
             ParamsKZG::read::<Cursor<&[u8]>>(&mut Cursor::new(&bytes))?
         } else {
-            let mut params = ParamsKZG::setup(17, OsRng);
+            let params = ParamsKZG::setup(18, OsRng);
             fs::create_dir_all("params")?;
             let mut file = fs::File::create(params_path)?;
             params.write(&mut file)?;
@@ -69,16 +76,8 @@ impl TopoShieldProver {
         let vk = keygen_vk(&params, &empty_circuit)?;
         let pk = keygen_pk(&params, vk.clone(), &empty_circuit)?;
 
-        // Store base circuit without witness
-        let base_circuit = CircomCircuit {
-            r1cs: config.r1cs,
-            witness: None,
-            wire_mapping: None,
-            aux_offset: config.aux_offset,
-        };
-
         Ok(Self {
-            circuit: base_circuit,
+            circuit,
             pk,
             vk,
             params,
@@ -111,7 +110,7 @@ impl TopoShieldProver {
         pub_inputs.extend_from_slice(&witness.m_hash);
 
         // Mock verification (critical for debugging)
-        let prover = MockProver::run(17, &circuit_with_witness, vec![pub_inputs.clone()])?;
+        let prover = MockProver::run(18, &circuit_with_witness, vec![pub_inputs.clone()])?;
         if let Err(failures) = prover.verify() {
             eprintln!("MockProver failed:");
             for failure in failures {
@@ -134,7 +133,7 @@ impl TopoShieldProver {
             &self.params,
             &self.pk,
             &[circuit_with_witness],
-            &[&[&pub_inputs]],
+            &[&[pub_inputs.as_slice()]],
             OsRng,
             &mut transcript,
         )?;
@@ -170,7 +169,7 @@ impl TopoShieldProver {
             &self.params,
             &self.vk,
             strategy,
-            &[&[&pub_inputs]],
+            &[pub_inputs.as_slice()],
             &mut transcript,
         )
     }
@@ -209,8 +208,8 @@ mod tests {
         let prover = TopoShieldProver::new()?;
         let witness = Witness::new(b"Test", b"seed");
         let proof = prover.prove(witness)?;
-        // Expected size for k=17: ~2.3 KB
-        assert!(proof.len() > 2000 && proof.len() < 3000);
+        // Expected size for k=18: ~2.5–3.0 KB
+        assert!(proof.len() > 2500 && proof.len() < 3500);
         Ok(())
     }
 }
