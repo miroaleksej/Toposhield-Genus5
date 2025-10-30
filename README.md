@@ -180,6 +180,7 @@ corollary toposhield_is_euf_cma_secure
 by
   -- Follows from the hybrid argument in the reduction
   sorry
+```
 ___
 
 #postquantum #zeroknowledge #topologicalcryptography #halo2 #circom #geometriccryptography #fuchsian #hyperbolicsurface #zkp #sl2 #manifold #signature #pqc #toposhield #bn254 #kzg #holonomy
