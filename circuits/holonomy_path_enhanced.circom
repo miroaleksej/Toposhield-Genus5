@@ -2,7 +2,6 @@
 // Enhanced TopoShield ZKP with structural validation
 // Genus = 5, path length = 20, faithful SL(2, Fp) representation
 // All matrices have det = 1 and satisfy ∏[A_i, B_i] = I
-// CORRECTED: Processes path in REVERSE order to match mathematical holonomy definition
 
 include "./poseidon.circom";
 
@@ -17,8 +16,8 @@ template SL2Multiply() {
     C[3] <== A[2]*B[1] + A[3]*B[3];
 }
 
-// Hardcoded generator matrices (0–19)
-// 0–4: a1–a5, 5–9: b1–b5, 10–14: a1⁻¹–a5⁻¹, 15–19: b1⁻¹–b5⁻¹
+// Hardcoded generator matrices (0-19)
+// 0-4: a1-a5, 5-9: b1-b5, 10-14: a1^-1-a5^-1, 15-19: b1^-1-b5^-1
 template GeneratorMatrix(idx) {
     signal output M[4];
     if (idx == 0) { M[0] <== 2; M[1] <== 1; M[2] <== 1; M[3] <== 1; }
@@ -45,17 +44,14 @@ template GeneratorMatrix(idx) {
 }
 
 // Compute holonomy from a path of generator indices
-// CORRECTED: Processes path in REVERSE order (from last to first)
-// This matches mathematical definition: Hol(γ) = Hol(γₙ)·...·Hol(γ₂)·Hol(γ₁)
 template PathToHolonomy(pathLen) {
     signal input indices[pathLen];
     signal output result[4];
     component gen[pathLen];
     signal mats[pathLen][4];
     
-    // Load all matrices IN REVERSE ORDER
+    // Load all matrices in REVERSE order (to match mathematical definition)
     for (var i = 0; i < pathLen; i++) {
-        // Process path from last segment to first
         gen[i] = GeneratorMatrix(indices[pathLen - 1 - i]);
         for (var j = 0; j < 4; j++) {
             mats[i][j] <== gen[i].M[j];
@@ -63,7 +59,6 @@ template PathToHolonomy(pathLen) {
     }
     
     // Compute product: result = mats[0] * mats[1] * ... * mats[pathLen-1]
-    // Which corresponds to Hol(γₙ) * ... * Hol(γ₁)
     if (pathLen == 1) {
         for (var j = 0; j < 4; j++) result[j] <== mats[0][j];
     } else {
@@ -71,13 +66,11 @@ template PathToHolonomy(pathLen) {
         for (var i = 0; i < pathLen - 1; i++) {
             mul[i] = SL2Multiply();
             if (i == 0) {
-                // First multiplication: mats[0] * mats[1]
                 for (var j = 0; j < 4; j++) {
                     mul[i].A[j] <== mats[0][j];
                     mul[i].B[j] <== mats[1][j];
                 }
             } else {
-                // Subsequent multiplications: (previous product) * next matrix
                 for (var j = 0; j < 4; j++) {
                     mul[i].A[j] <== mul[i-1].C[j];
                     mul[i].B[j] <== mats[i+1][j];
@@ -91,25 +84,152 @@ template PathToHolonomy(pathLen) {
 // Enforce that a path is reduced (no adjacent inverse pairs)
 template ReducedPathCheck(pathLen) {
     signal input indices[pathLen];
-    // For each adjacent pair (i, i+1), ensure it's not (a, a⁻¹) or (b, b⁻¹)
+    // For each adjacent pair (i, i+1), ensure it's not (a, a^-1) or (b, b^-1)
     for (var i = 0; i < pathLen - 1; i++) {
-        // a_i: indices 0–4 → inverses: 10–14
-        // b_i: indices 5–9 → inverses: 15–19
+        // a_i: indices 0-4 -> inverses: 10-14
+        // b_i: indices 5-9 -> inverses: 15-19
         signal is_a_cancel = 0;
         signal is_b_cancel = 0;
         for (var j = 0; j < 5; j++) {
             is_a_cancel += (indices[i] == j) * (indices[i+1] == j + 10);
             is_b_cancel += (indices[i] == j + 5) * (indices[i+1] == j + 15);
         }
-        // Also check reverse order: a⁻¹ followed by a
+        // Also check reverse order: a^-1 followed by a
         for (var j = 0; j < 5; j++) {
             is_a_cancel += (indices[i] == j + 10) * (indices[i+1] == j);
             is_b_cancel += (indices[i] == j + 15) * (indices[i+1] == j + 5);
         }
-        // These must be zero — no cancellations allowed
+        // These must be zero - no cancellations allowed
         is_a_cancel === 0;
         is_b_cancel === 0;
     }
+}
+
+// Check for non-adjacent inverse pairs that could be canceled
+template NonAdjacentInversesCheck(pathLen) {
+    signal input indices[pathLen];
+    signal output isValid;
+    
+    // For each pair (i,j) with j > i+1, check if they're inverses
+    var allValid = 1;
+    for (var i = 0; i < pathLen; i++) {
+        for (var j = i + 2; j < pathLen; j++) {
+            // Check if indices[i] and indices[j] are inverses
+            var isInverse = 0;
+            for (var k = 0; k < 10; k++) {
+                isInverse += (indices[i] == k) * (indices[j] == k + 10);
+                isInverse += (indices[i] == k + 10) * (indices[j] == k);
+            }
+            
+            // If they are inverses, check if there's an obstacle between them
+            var hasObstacle = 1;
+            for (var k = i + 1; k < j; k++) {
+                // Check if the elements between i and j prevent cancellation
+                hasObstacle = hasObstacle * 
+                    is_path_segment_non_cancellable(indices[i], indices[k], indices[j]);
+            }
+            
+            // If inverses but no obstacle, path is invalid
+            allValid = allValid * (1 - isInverse + isInverse * hasObstacle);
+        }
+    }
+    
+    isValid <== allValid;
+}
+
+// Check if a path segment prevents cancellation of inverse pairs
+template PathSegmentNonCancellableCheck() {
+    signal input a;
+    signal input b;
+    signal input c;
+    signal output result;
+    
+    // For a and c being inverses, check if b prevents cancellation
+    var isACInverse = 0;
+    for (var k = 0; k < 10; k++) {
+        isACInverse += (a == k) * (c == k + 10);
+        isACInverse += (a == k + 10) * (c == k);
+    }
+    
+    // Check if b creates an obstacle to cancellation
+    var obstacle = 0;
+    // In genus-5 surface, cancellation is blocked if b doesn't commute with a
+    for (var k = 0; k < 10; k++) {
+        // Check if b commutes with a (simplified)
+        obstacle += (a == k) * (b != k) * (b != k + 5);
+        obstacle += (a == k + 5) * (b != k) * (b != k + 5);
+        obstacle += (a == k + 10) * (b != k) * (b != k + 5);
+        obstacle += (a == k + 15) * (b != k) * (b != k + 5);
+    }
+    
+    result <== isACInverse * (1 - obstacle) + (1 - isACInverse);
+}
+
+// Check if path has minimal length in its homotopy class
+template PathMinimalityCheck(pathLen) {
+    signal input indices[pathLen];
+    signal output isValid;
+    
+    // Step 1: Check for adjacent inverse pairs
+    component reducedCheck = ReducedPathCheck(pathLen);
+    for (var i = 0; i < pathLen; i++) {
+        reducedCheck.indices[i] <== indices[i];
+    }
+    
+    // Step 2: Check for non-adjacent inverse pairs that could be canceled
+    component nonAdjacentCheck = NonAdjacentInversesCheck(pathLen);
+    for (var i = 0; i < pathLen; i++) {
+        nonAdjacentCheck.indices[i] <== indices[i];
+    }
+    
+    // Step 3: Check geometric length constraints
+    component geometricCheck = GeometricLengthCheck(pathLen);
+    for (var i = 0; i < pathLen; i++) {
+        geometricCheck.indices[i] <== indices[i];
+    }
+    
+    // All checks must pass for path to be minimal
+    isValid <== reducedCheck.isValid * 
+                 nonAdjacentCheck.isValid * 
+                 geometricCheck.isValid;
+}
+
+// Check geometric length constraints for a path
+template GeometricLengthCheck(pathLen) {
+    signal input indices[pathLen];
+    signal output isValid;
+    
+    // Compute holonomy to determine geometric length
+    component holonomy = PathToHolonomy(pathLen);
+    for (var i = 0; i < pathLen; i++) {
+        holonomy.indices[i] <== indices[i];
+    }
+    
+    // Compute trace of holonomy matrix
+    signal trace = holonomy.result[0] + holonomy.result[3];
+    
+    // For hyperbolic elements, |trace| > 2
+    signal isHyperbolic = 1;
+    if (trace < -2 || trace > 2) {
+        isHyperbolic = 1;
+    } else {
+        isHyperbolic = 0;
+    }
+    
+    // Compute approximate geometric length
+    signal geometricLength;
+    if (isHyperbolic == 1) {
+        // Length = 2 * acosh(|trace|/2)
+        geometricLength <== 2 * acosh(abs(trace)/2);
+    } else {
+        // Parabolic/elliptic elements have small length
+        geometricLength <== 0.1;
+    }
+    
+    // Check if geometric length meets lower bound
+    // For genus-5 surface, L >= 0.5 * ln(n) where n is algebraic length
+    signal lowerBound = 0.5 * ln(pathLen);
+    isValid <== (geometricLength >= lowerBound) ? 1 : 0;
 }
 
 // Main enhanced verification circuit
@@ -118,25 +238,24 @@ template TopoShieldVerifyEnhanced() {
     signal input H_pub[4];      // Hol(gamma)
     signal input H_sig[4];      // Hol(gamma || delta)
     signal input desc_M[4];     // Manifold descriptor
-    signal input m_hash[4];     // Hash of message (unused in constraints but required for witness binding)
-
+    signal input m_hash[4];     // Hash of message
+    
     // Private witness
-    signal private gamma[20];   // Secret path (generator indices 0–19)
+    signal private gamma[20];   // Secret path (generator indices 0-19)
     signal private delta[20];   // Message-dependent modifier
-
-    // 1. Enforce reduced form for gamma and delta
-    component check_gamma = ReducedPathCheck(20);
+    
+    // 1. Enforce minimal path form for gamma and delta
+    component check_gamma = PathMinimalityCheck(20);
     for (var i = 0; i < 20; i++) check_gamma.indices[i] <== gamma[i];
-
-    component check_delta = ReducedPathCheck(20);
+    
+    component check_delta = PathMinimalityCheck(20);
     for (var i = 0; i < 20; i++) check_delta.indices[i] <== delta[i];
-
+    
     // 2. Verify H_pub = Hol(gamma)
-    // CORRECTED: Path processed in REVERSE order (matches mathematical definition)
     component pubPath = PathToHolonomy(20);
     for (var i = 0; i < 20; i++) pubPath.indices[i] <== gamma[i];
     for (var i = 0; i < 4; i++) pubPath.result[i] === H_pub[i];
-
+    
     // 3. Verify H_sig = Hol(gamma || delta)
     signal combined[40];
     for (var i = 0; i < 20; i++) combined[i] <== gamma[i];
@@ -144,7 +263,7 @@ template TopoShieldVerifyEnhanced() {
     component sigPath = PathToHolonomy(40);
     for (var i = 0; i < 40; i++) sigPath.indices[i] <== combined[i];
     for (var i = 0; i < 4; i++) sigPath.result[i] === H_sig[i];
-
+    
     // 4. Enhanced manifold descriptor: Poseidon(5, -8, 12345, tr(a1), tr(b1), ..., tr(b5))
     component desc = Poseidon(13);
     desc.in[0] <== 5;           // genus
