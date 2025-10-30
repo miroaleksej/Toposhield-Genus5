@@ -121,20 +121,6 @@ Runs `prove-example.rs`, which:
 - **Deterministic signatures**: Uses Poseidon-based PRF for nonce derivation, eliminating randomness-related vulnerabilities.
 
 ---
-
-### Performance (Genus = 5, Path Length = 20)
-
-| Operation               | Time (Release) | Output Size |
-|------------------------|----------------|-------------|
-| Key generation         | < 1 ms         | —           |
-| Signature (witness)    | ~5 ms          | —           |
-| Proof generation       | ~1.8 s (CPU)   | 2.3 KB      |
-| Proof verification     | ~12 ms         | —           |
-
-*Tested on Intel i7-12700K, 32 GB RAM.*
-
----
-
 ### Limitations and Future Work
 
 - **Fixed parameters**: Currently supports only genus = 5. Generalization to arbitrary genus requires dynamic circuit generation.
