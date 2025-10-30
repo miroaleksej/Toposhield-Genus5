@@ -1,102 +1,101 @@
-# TopoShield ZKP — Makefile for genus=5 prototype
-# Fully automated build, test, and proof generation
+# TopoShield ZKP — Genus 5 Prototype
+# Makefile for building, testing, and proving
 
-# Configuration
-CIRCUIT_NAME = holonomy_path
-CIRCUIT_DIR = circuits
-BUILD_DIR = build
-PARAMS_DIR = params
-SRC_DIR = src
-TESTS_DIR = tests
+# Directories
+CIRCUIT_DIR := circuits
+BUILD_DIR := build
+PARAMS_DIR := params
+SRC_DIR := src
+
+# Artifacts
+CIRCUIT := $(CIRCUIT_DIR)/holonomy_path.circom
+R1CS := $(BUILD_DIR)/holonomy_path.r1cs
+WASM := $(BUILD_DIR)/holonomy_path.wasm
+SRS := $(PARAMS_DIR)/kzg.srs
 
 # Tools
-CIRCOM = circom
-RUSTC = cargo
-SNARKJS = npx snarkjs
-
-# Halo2 parameters (k=17 supports ~131k constraints)
-K_PARAM = 17
+CIRCOM := circom
+SNARKJS := snarkjs
+RUSTC := rustc
+CARGO := cargo
 
 # Default target
 .PHONY: all
 all: setup compile-circuit setup-kzg test
 
-# Install dependencies
+# Install system and Node.js dependencies
 .PHONY: setup
 setup:
-	@echo "[+] Installing dependencies..."
-	@which $(CIRCOM) > /dev/null || npm install -g circom
-	@$(RUSTC) --version > /dev/null || (echo "Error: Rust not found. Install Rust: https://rustup.rs" && exit 1)
-	@$(RUSTC) build --quiet
-	@echo "[+] Dependencies installed."
+	@echo "🔧 Installing Rust dependencies..."
+	$(CARGO) build --release
+	@echo "📦 Installing Circom and snarkjs (if not present)..."
+	@which $(CIRCOM) > /dev/null || (echo "❌ circom not found. Please install: npm install -g circom" && exit 1)
+	@which $(SNARKJS) > /dev/null || (echo "❌ snarkjs not found. Please install: npm install -g snarkjs" && exit 1)
+	@echo "✅ Setup complete."
 
 # Compile Circom circuit
+$(BUILD_DIR):
+	@mkdir -p $@
+
+$(R1CS) $(WASM): $(CIRCUIT) | $(BUILD_DIR)
+	@echo "⚙️  Compiling Circom circuit..."
+	$(CIRCOM) $< --r1cs --wasm --sym --output $(BUILD_DIR)
+
 .PHONY: compile-circuit
-compile-circuit: setup
-	@echo "[+] Compiling Circom circuit..."
-	@mkdir -p $(BUILD_DIR)
-	$(CIRCOM) $(CIRCUIT_DIR)/$(CIRCUIT_NAME).circom \
-		--r1cs \
-		--wasm \
-		--sym \
-		--output $(BUILD_DIR)/
-	@echo "[+] Circuit compiled: $(BUILD_DIR)/$(CIRCUIT_NAME).r1cs"
+compile-circuit: $(R1CS) $(WASM)
+	@echo "✅ Circuit compiled to $(BUILD_DIR)/"
 
-# Generate KZG trusted setup parameters (one-time)
+# Generate KZG trusted setup (one-time)
+$(PARAMS_DIR):
+	@mkdir -p $@
+
+$(SRS): | $(PARAMS_DIR)
+	@echo "🔐 Generating KZG trusted setup (k=17)..."
+	$(CARGO) run --bin setup-kzg --release
+	@echo "✅ KZG parameters saved to $(SRS)"
+
 .PHONY: setup-kzg
-setup-kzg: compile-circuit
-	@echo "[+] Generating KZG parameters (k=$(K_PARAM))..."
-	@mkdir -p $(PARAMS_DIR)
-	@if [ ! -f "$(PARAMS_DIR)/kzg.srs" ]; then \
-		$(RUSTC) run --example setup_kzg --release -- --k=$(K_PARAM) --output=$(PARAMS_DIR)/kzg.srs; \
-	else \
-		echo "[+] KZG parameters already exist."; \
-	fi
+setup-kzg: $(SRS)
 
-# Run integration tests
+# Run Rust integration tests
 .PHONY: test
-test: setup-kzg
-	@echo "[+] Running integration tests..."
-	$(RUSTC) test --release
+test:
+	@echo "🧪 Running integration tests..."
+	$(CARGO) test --release
+	@echo "✅ All tests passed."
 
-# Generate a proof for a test message
+# Generate a sample ZK proof
 .PHONY: prove
-prove: test
-	@echo "[+] Generating ZK proof..."
-	$(RUSTC) run --release --bin prover_example
+prove:
+	@echo "🧾 Generating ZK proof..."
+	$(CARGO) run --bin prove-example --release
+	@echo "✅ Proof generated."
 
 # Clean build artifacts
 .PHONY: clean
 clean:
-	@echo "[-] Cleaning build artifacts..."
-	rm -rf $(BUILD_DIR)/*
-	rm -rf $(PARAMS_DIR)/*
-	cargo clean
+	@echo "🧹 Cleaning build artifacts..."
+	rm -rf $(BUILD_DIR) $(PARAMS_DIR)
+	$(CARGO) clean
+	@echo "✅ Cleaned."
 
 # Rebuild everything
 .PHONY: rebuild
 rebuild: clean all
 
-# Verify Circom circuit constraints (debug)
-.PHONY: debug-circuit
-debug-circuit: compile-circuit
-	@echo "[+] Debugging circuit constraints..."
-	$(CIRCOM) $(CIRCUIT_DIR)/$(CIRCUIT_NAME).circom --r1cs --sym --wat --output $(BUILD_DIR)/
-	@echo "[+] WAT file generated for debugging."
-
-# Help
-.PHONY: help
-help:
-	@echo "TopoShield ZKP Makefile — genus=5 prototype"
+# Show project info
+.PHONY: info
+info:
+	@echo "TopoShield ZKP — Genus 5 Prototype"
+	@echo "----------------------------------"
+	@echo "Private key = path γ in π₁(ℳ)"
+	@echo "Public key  = Hol(γ) ∈ SL(2, Fp)"
+	@echo "Signature   = Hol(γ · δ(m))"
+	@echo "Verification = Halo2 + Circom ZKP"
 	@echo ""
-	@echo "Targets:"
-	@echo "  setup          Install dependencies"
-	@echo "  compile-circuit Compile Circom circuit"
-	@echo "  setup-kzg      Generate KZG trusted setup (one-time)"
-	@echo "  test           Run integration tests"
-	@echo "  prove          Generate a ZK proof"
-	@echo "  clean          Remove build artifacts"
-	@echo "  rebuild        Clean and rebuild everything"
-	@echo "  debug-circuit  Generate WAT for constraint debugging"
-	@echo ""
-	@echo "Quick start: make setup && make prove"
+	@echo "Quick Start:"
+	@echo "  make setup          # Install dependencies"
+	@echo "  make compile-circuit # Compile Circom"
+	@echo "  make setup-kzg      # Generate KZG setup"
+	@echo "  make test           # Run tests"
+	@echo "  make prove          # Generate proof"
