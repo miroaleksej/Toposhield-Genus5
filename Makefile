@@ -5,6 +5,7 @@
 CIRCUIT_DIR := circuits
 BUILD_DIR := build
 PARAMS_DIR := params
+SRC_DIR := src
 
 # Artifacts
 CIRCUIT := $(CIRCUIT_DIR)/holonomy_path_enhanced.circom
