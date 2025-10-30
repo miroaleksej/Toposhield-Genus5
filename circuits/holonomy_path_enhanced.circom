@@ -2,6 +2,7 @@
 // Enhanced TopoShield ZKP with structural validation
 // Genus = 5, path length = 20, faithful SL(2, Fp) representation
 // All matrices have det = 1 and satisfy ∏[A_i, B_i] = I
+// CORRECTED: Processes path in NATURAL order to match mathematical holonomy definition
 
 include "./poseidon.circom";
 
@@ -44,17 +45,22 @@ template GeneratorMatrix(idx) {
 }
 
 // Compute holonomy from a path of generator indices
+// CORRECTED: Processes path in NATURAL order (first to last)
 template PathToHolonomy(pathLen) {
     signal input indices[pathLen];
     signal output result[4];
     component gen[pathLen];
     signal mats[pathLen][4];
+    
+    // Load all matrices
     for (var i = 0; i < pathLen; i++) {
         gen[i] = GeneratorMatrix(indices[i]);
         for (var j = 0; j < 4; j++) {
             mats[i][j] <== gen[i].M[j];
         }
     }
+    
+    // Compute product: result = mats[0] * mats[1] * ... * mats[pathLen-1]
     if (pathLen == 1) {
         for (var j = 0; j < 4; j++) result[j] <== mats[0][j];
     } else {
@@ -62,11 +68,13 @@ template PathToHolonomy(pathLen) {
         for (var i = 0; i < pathLen - 1; i++) {
             mul[i] = SL2Multiply();
             if (i == 0) {
+                // First multiplication: mats[0] * mats[1]
                 for (var j = 0; j < 4; j++) {
                     mul[i].A[j] <== mats[0][j];
                     mul[i].B[j] <== mats[1][j];
                 }
             } else {
+                // Subsequent multiplications: (previous product) * next matrix
                 for (var j = 0; j < 4; j++) {
                     mul[i].A[j] <== mul[i-1].C[j];
                     mul[i].B[j] <== mats[i+1][j];
@@ -121,6 +129,7 @@ template TopoShieldVerifyEnhanced() {
     for (var i = 0; i < 20; i++) check_delta.indices[i] <== delta[i];
 
     // 2. Verify H_pub = Hol(gamma)
+    // CORRECTED: Path processed in natural order (matches Rust implementation)
     component pubPath = PathToHolonomy(20);
     for (var i = 0; i < 20; i++) pubPath.indices[i] <== gamma[i];
     for (var i = 0; i < 4; i++) pubPath.result[i] === H_pub[i];
