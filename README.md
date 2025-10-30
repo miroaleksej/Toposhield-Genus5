@@ -1,6 +1,10 @@
 # **TopoShield ZKP — Genus 5 Prototype**  
 *Post-quantum signature scheme based on hyperbolic topology and zero-knowledge proofs*
 
+![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange?logo=rust&logoColor=white)
+![Circom](https://img.shields.io/badge/Circom-2.x-blue?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyQTEwIDEwIDAgMCAxIDIyIDEyQTEwIDEwIDAgMCAxIDEyIDIyQTEwIDEwIDAgMCAxIDIgMTJBMTEgMTEgMCAwIDEgMTIgMnptMCAyYTggOCAwIDAgMC04IDhhOCA4IDAgMCAwIDggOGExIDAgMCAwIDEgMCAxYTggOCAwIDAgMCA4LThhOCA4IDAgMCAwLTgtOHoiLz48L3N2Zz4=)
+![Halo2](https://img.shields.io/badge/Halo2-v0.5-purple?logo=zk&logoColor=white)
+![BN256](https://img.shields.io/badge/Curve-BN256-lightgrey)
 ---
 
 ### Overview
