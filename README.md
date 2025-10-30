@@ -5,6 +5,12 @@
 ![Circom](https://img.shields.io/badge/Circom-2.x-blue?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyQTEwIDEwIDAgMCAxIDIyIDEyQTEwIDEwIDAgMCAxIDEyIDIyQTEwIDEwIDAgMCAxIDIgMTJBMTEgMTEgMCAwIDEgMTIgMnptMCAyYTggOCAwIDAgMC04IDhhOCA4IDAgMCAwIDggOGExIDAgMCAwIDEgMCAxYTggOCAwIDAgMCA4LThhOCA4IDAgMCAwLTgtOHoiLz48L3N2Zz4=)
 ![Halo2](https://img.shields.io/badge/Halo2-v0.5-purple?logo=zk&logoColor=white)
 ![BN256](https://img.shields.io/badge/Curve-BN256-lightgrey)
+![Status](https://img.shields.io/badge/Status-Prototype-success)
+![License](https://img.shields.io/badge/License-MIT-green)
+![Category](https://img.shields.io/badge/Category-Post--Quantum_Cryptography-red)
+![ZK](https://img.shields.io/badge/ZK-Enabled-brightgreen)
+![Visitors](https://komarev.com/ghpvc/?username=your-username&repo=toposhield&color=blue&style=flat)
+
 ---
 
 ### Overview
